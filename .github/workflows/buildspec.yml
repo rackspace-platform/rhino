@@ -1,0 +1,87 @@
+name: Python MicroService
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ "*" ]
+
+env:
+  DUMMY: value
+  EKS_CLUSTER: "EKS-DEVELOPMENT"
+  AWS_REGION: "eu-west-2"
+  ACCOUNT_ID: 694192863430
+  IMAGE_REGISTRY_URL: "694192863430.dkr.ecr.eu-west-2.amazonaws.com/rackspace-platform"
+  IMAGE_TAG: "latest"
+
+permissions:
+  id-token: write   # This is required for requesting the JWT
+  contents: read    # This is required for actions/checkout
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python 
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install flake8 pytest
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --ignore=E501 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+  
+    # - name: test coverage
+    #   run: |
+    #     coverage run -m pytest
+    #     coverage report
+
+  build_image: 
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+    - uses: actions/checkout@v3
+    - name: configure aws credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        role-to-assume: arn:aws:iam::${{env.ACCOUNT_ID}}:role/oidc-for-github
+        role-session-name: github-action-federated-access
+        aws-region: ${{ env.AWS_REGION }}
+    - name:  Docker login
+      run: |
+        aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+    - name: Build Docker image
+      run: |
+        docker build -t rackspace-platform/rhino:${{ github.sha }}  .
+        docker tag rackspace-platform/rhino:${{ github.sha }} ${{ env.IMAGE_REGISTRY_URL }}/rhino:${{ github.sha }}
+        docker tag rackspace-platform/rhino:${{ github.sha }} ${{ env.IMAGE_REGISTRY_URL }}/rhino:latest
+        docker push  ${{ env.IMAGE_REGISTRY_URL }}/rhino:latest
+  deploy_to_eks:
+      runs-on: ubuntu-latest
+      if: github.ref == 'refs/heads/master'
+      needs: [build_image]
+      steps:
+        - name: Check out
+          uses: actions/checkout@master
+        - name: configure aws credentials
+          uses: aws-actions/configure-aws-credentials@v2
+          with:
+            role-to-assume: arn:aws:iam::${{env.ACCOUNT_ID}}:role/oidc-for-github
+            role-session-name: github-action-federated-access
+            aws-region: ${{ env.AWS_REGION }}
+        - name: Install Helm Chart
+          uses: bitovi/github-actions-deploy-eks-helm@v1.2.4
+          with:
+            aws-region: ${{ env.AWS_REGION }}
+            cluster-name: ${{ env.EKS_CLUSTER }}
+            chart-path: ./helm/hello-world
+            name: rhino
+            values: image.repository=${{ env.IMAGE_REGISTRY_URL }}/rhino,image.tag=${{env.IMAGE_TAG}}

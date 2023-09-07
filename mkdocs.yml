@@ -1,0 +1,9 @@
+site_name: 'Sample Python Microservice Docs'
+
+nav:
+  - Overview: index.md
+  - Getting Started: gettingstarted.md
+
+plugins:
+  - techdocs-core
+  
