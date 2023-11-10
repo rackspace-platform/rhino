@@ -1,7 +1,5 @@
 ## Title: Getting Started with Python Microservices
 
-![Microservices Architecture](./microservices_architecture.png "Monolithic vs Microservices")
-
 # Introduction:
 Python microservices offer a powerful and scalable approach to building modern software systems. By breaking down applications into smaller, independent components, developers can create flexible and maintainable systems that are easier to scale, deploy, and test. In this guide, we'll walk you through the essential steps to get started with Python microservices.
 
